@@ -467,8 +467,10 @@ Not done / unknown:
   hits are Item_work entries addressed as `[i*4 + 0x98ED30]` (1-based index). Consequence: these two
   written on the client are overwritten by the host's copy (the host's puzzle state wins).
 - Inventories stay separate (each player's Item_work).
-- A crash of copy B at `0x4E2AF2` during this session came from a debug write of -1 to
-  `0x98EAE4` (an AOT index the game reads), not from the plugin.
+- A crash of copy B at `0x4E2AF2` during this session was first put down to a debug write of -1 to
+  `0x98EAE4`. **Wrong:** the real two-account test (below) crashed at the same address with no
+  debug write; it is the puppet's shadow anchor being NULL. The debug write was a coincidence or
+  at most a trigger.
 
 Real pickup by a bot (2026-10-28, later):
 - Observed: right after a debug warp the player is in Routine `01 00 00 00` and square does
@@ -494,3 +496,41 @@ Item taken by the other player, same room (2026-10-28, later):
 - `pickuptest.py` 13/13 (udp and steam-mock, both orders; qa_suite 33/33 and storytest 16/16 in the same series): the room 0x06 item's model (MD1 3, Be_flg 0xB on both) goes to Be_flg 0 on
   the other player within 2 s, without leaving the room. Checked in memory only: screenshots of the
   copies came out black at that point, so not checked by eye.
+
+## Real two-account Steam test (2026-10-28, owner and a friend, v0.2)
+
+Owner's logs in `local/` (not published). Host: Leon; what each player loaded: unknown (to ask).
+
+Observed (logs):
+- Steam: the client found the hosting friend by itself (`friend ... is hosting`), sender identity
+  at offset 12 as on the mock. Connected first try.
+- Enemies (type 0x1F) in several rooms: client hits applied by the host (`host applies client hit`,
+  life going down, deaths mirrored on the client `slot N dies (host)`); host enemies hit the
+  client (`host's slot 5 hit us ... life 200 -> 193`). Targets switch between both players.
+- **Host crash** `CRASH code c0000005 at 004e2af2 (rw 0 addr 00000008)` right at the end of the
+  first Kendo cutscene in the gun shop; the puppet had just been spawned again twice
+  (`em_set: done slot 33` x2). The client kept running (`steam: session failed`).
+Owner's notes: host saw two Leons (expected Leon + Claire, the client's log says avatar 51);
+client saw Claire and Leon. No shooting animation on either puppet. On the client a zombie
+attacked the empty floor while on the host it was already dead.
+
+Crash cause (derived from the registers and a reproduction): the shadow pass (0x4C0669, other
+entities) calls `0x4E2AE0([pKage+0x14], ...)`; ebx = that pointer = NULL. The entity in esi was the
+puppet (`009493fc`, the last em_set). The same signature (edx 0x8000, esp 0x0503fc28) as copy B's
+crash this morning.
+- `[pKage+0x14]` is the shadow's anchor, `[entity+0x198] + 0x5C` (the first part's world position);
+  same on the player. The entity's own routine also reads it (`0x4B30D3`).
+- Why it was NULL after the cutscene: unknown.
+- Fix: the guard before the entity loop puts the anchor back (`[e+0x198] + 0x5C`) for our em_set
+  entities, and the shadow pass is patched to skip an entity whose pKage or anchor is NULL (stub
+  jumped to from 0x4C0669, original 22 bytes checked first).
+- `qa/shadowtest.py`: debug cmd 7 empties the puppet's anchor on the host. With `[test]
+  shadow_fix=0` (`--nofix`) the host crashes at 0x4E2AF2 (3/3: the test reproduces the real
+  crash); with the fix 7/7. Debug commands now run before the guard.
+
+Not explained yet: the two Leons (the log did not record the spawned type; it now logs
+`showing the peer as NPC type ..`), the zombie attacking nothing on the client. Not implemented:
+the puppet's shooting animation.
+
+Regression after the fix (2026-10-28, udp and steam-mock each): qa_suite 33/33, shadowtest 7/7,
+pickuptest 13/13 (client and host picking), storytest 16/16, multitest 17/17.
