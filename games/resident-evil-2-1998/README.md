@@ -10,14 +10,15 @@
 
 ## Where things stand
 
-re2coop v0.2 (prototype) lets two players play online over the Steam relay (Spacewar AppID 480)
+re2coop v0.2.1 (prototype) lets two players play online over the Steam relay (Spacewar AppID 480)
 or direct UDP. The other player is a real NPC model (Leon or Claire) that walks, runs and turns
 with the game's own animations, and the client is taken to the host's room whenever the host
 changes room. The host owns the world: the client mirrors the enemies of the host's room, its
 shots are applied by the host, and the host's enemies attack it too. Kill flags, items (an item one
 player takes is gone for both) and story flags (doors, story, maps, files) are shared.
-Inventories stay per player. Cutscenes and bosses are not synchronised, and two real Steam
-accounts have not played together yet.
+Inventories stay per player. Cutscenes and bosses are not synchronised. One real two-account
+Steam session has run (v0.2): the client found the host by itself and shared combat worked; the
+host crashed after the first Kendo cutscene, which v0.2.1 fixes.
 
 ## Existing work
 
@@ -110,6 +111,11 @@ only and checks the bytes it patches, so on another exe it disables itself.
     for an item of the current room, the plugin does the same, so the item disappears at once.
   - Two writers bypass Flg_on: a puzzle state byte at 0x98EBD0 and Zapping_flg; for those the
     host's value wins.
+- **Shadow anchor (v0.2.1):** the shadow pass (0x4C0669) and the entity's own routine (0x4B30D3) read
+  `[pKage+0x14]`, the shadow's anchor (`[entity+0x198] + 0x5C`, the first part's world position).
+  In the real test it was NULL on the puppet right after the Kendo cutscene and the host crashed at
+  0x4E2AF2. The guard before the entity loop now puts the anchor back for the plugin's entities, and
+  the shadow pass skips an entity whose pKage or anchor is NULL. Why it became NULL: unknown.
 - **Networking:**
   - Steam: a friends-only Spacewar lobby. The client finds the hosting friend by itself through
     the friend list, or uses an invite or a lobby id. Traffic is unreliable ISteamNetworkingMessages
@@ -134,8 +140,11 @@ bots write the raw pad from Python, and for door tests they teleport the player 
   (~200 lines) implements the 30 flat exports the plugin uses over localhost UDP. It reproduces the
   real-Steam behaviour the playbook warns about: sender identity at offset 12, lobby results
   delivered twice, and messages held until AcceptSessionWithUser.
-- **Real Steam:** checked on one account. Init, lobby creation and rich presence work; two-account
-  play over real Steam has not run yet.
+- **Real Steam:** one two-account session (the owner and a friend, v0.2, 2026-10-28). The client
+  found the hosting friend by itself; client hits applied by the host, deaths mirrored, host enemies
+  hurt the client (life 200 -> 128). Problems: the host crash fixed in v0.2.1; a client playing
+  Claire shown as Leon on the host; no shooting animation on the puppets; one zombie still attacking
+  on the client after it died on the host.
 - **Suite (`qa_suite.py`, 33 checks):**
   - connection both ways
   - puppets visible, with the right types
@@ -153,18 +162,21 @@ bots write the raw pad from Python, and for door tests they teleport the player 
     zombies, host enemies attacking the client.
   - `storytest` (16): the client takes the host's flags, bits either side sets or clears through the
     game's functions reach the other, and an item the host took is gone when the client re-enters.
+  - `shadowtest` (7): empties the puppet's shadow anchor on the host; with the fix off
+    (`--nofix`) the host crashes at 0x4E2AF2 like in the real test, with it the game runs on.
   - `pickuptest [client|host]` (13): one player picks up the ink ribbons of stage 0 room 0x06 with
     the buttons (cross tap, then square); the other gets the flag, the item's model disappears in
     the same room, the other cannot pick it up, and no save file is written (the typewriter shares
     the spot).
 - `[test] loss=N` drops N% of each copy's outgoing packets.
 
-Last results, 2026-10-28 (both transports):
+Last results, 2026-10-28, v0.2.1 (both transports):
 
 ```
 SUITE udp: PASS 33/33          SUITE steam-mock: PASS 33/33
-STORYTEST: PASS 16/16          (udp, steam-mock)
-PICKUPTEST: PASS 13/13         (client and host picking, udp and steam-mock)
+STORYTEST: PASS 16/16          SHADOWTEST: PASS 7/7
+PICKUPTEST: PASS 13/13         (client and host picking)
+MULTITEST: PASS 17/17
 ```
 
 Earlier the same night: enemytest, mirrortest and hittest 11/11, multitest 17/17, attacktest 8/8,
@@ -176,27 +188,32 @@ was taken to stage 5 room 0x12 and was in control afterwards.
 
 ## How to play
 
-Release v0.2 on [shoukyperry/re2coop](https://github.com/shoukyperry/re2coop/releases). The package has `installer-hote.bat`
+Release v0.2.1 on [shoukyperry/re2coop](https://github.com/shoukyperry/re2coop/releases). The package has `installer-hote.bat`
 and `installer-invite.bat`; they find the game in the Steam libraries, check the exe hash and add
 three files to `rebirth\`. The host loads a save; the client loads a save (ideally the same one)
 and joins the hosting Steam friend automatically, taking the host's progress. Both players need
-the same version (v0.2 does not talk to v0.1).
+v0.2 or v0.2.1 (same protocol; v0.1 is not compatible).
 
 ## Known issues
 
 - Cutscenes and bosses are not synchronised; the grab animation is not shown on the client.
+- The puppet does not play the shooting animation.
+- At the start of Leon A (gun shop) a client playing Claire was shown as Leon on the host, although
+  it announced Claire (NPC type 0x51); cause unknown, the log now records the type shown.
+- One zombie kept attacking on the client after it had died on the host.
 - Inventories are per player.
 - A puzzle state byte (0x98EBD0) and Zapping_flg are written without the game's flag functions: the
   client's changes to them are overwritten by the host's.
 - Under heavy packet loss (30% and more) the puppet can fall far behind.
 - On arrival through follow-host, both characters can stand on the same spot.
 - Steam shows both players as playing "Spacewar".
-- Not tested: real two-account Steam play, cutscene rooms, rooms that use em slot 31, the Ada and
+- Not tested: cutscene rooms beyond the first Kendo one, rooms that use em slot 31, the Ada and
   Sherry sections, death and game over, enemy types beyond the five tested.
 
 ## Next steps
 
-1. A two-account real-Steam run.
-2. Cutscenes and bosses; show grabs on the client.
-3. Partner sections: let player 2 control Ada or Sherry when the host's partner slot is in use.
-4. The puppet under heavy packet loss.
+1. The Claire-shown-as-Leon puppet and the zombie death the client missed (both from the real test).
+2. The puppet's shooting animation.
+3. Cutscenes and bosses; show grabs on the client.
+4. Partner sections: let player 2 control Ada or Sherry when the host's partner slot is in use.
+5. The puppet under heavy packet loss.

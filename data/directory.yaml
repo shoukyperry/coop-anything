@@ -3423,12 +3423,13 @@
   last_activity: 2026-10
   qa: automated
   notes: ASI plugin for the Steam re-release running Mulder's Steam Enhancement Pack (Sourcenext bio2.exe
-    + Classic REbirth). v0.2. The other player is an NPC (Leon or Claire) spawned with the game's own em_set and
+    + Classic REbirth). v0.2.1. The other player is an NPC (Leon or Claire) spawned with the game's own em_set and
     walked with plc_dest; the client follows the host through doors (also across stages). Host-authoritative
     room enemies (client mirrors them, client hits applied by the host, host enemies attack the client), kill
     flags, shared items and story flags (Flg_on/Flg_off hooked on the client); inventories per player;
     cutscenes and bosses not synced. Steam Spacewar relay or direct UDP. Two-instance bot suite 33/33 plus
-    enemy, story and real-pickup tests on UDP and a Steam mock; two real Steam accounts not tested together.
+    enemy, story and real-pickup tests on UDP and a Steam mock; one real two-account Steam session (its host crash
+    fixed in v0.2.1).
     MIT license. Write-up in games/resident-evil-2-1998.
   sources:
   - https://github.com/shoukyperry/re2coop
